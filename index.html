@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Giám sát điện 3 pha</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js">
+  /* ================= MQTT CONFIG ================= */
+  // Sử dụng MQTT over WebSocket
+  // Ví dụ dùng HiveMQ public broker
+  const mqttBroker = 'wss://broker.hivemq.com:8884/mqtt';
+  const mqttOptions = {
+    clean: true,
+    connectTimeout: 4000,
+    clientId: 'web_hcmute_' + Math.random().toString(16).substr(2, 8)
+  };
+
+  // Khởi tạo MQTT client
+  const client = mqtt.connect(mqttBroker, mqttOptions);
+
+  client.on('connect', () => {
+    console.log('MQTT connected');
+    client.subscribe('hcmute/energy/#');
+  });
+
+  client.on('error', (err) => {
+    console.error('MQTT error', err);
+  });
+
+  // Nhận dữ liệu từ HMI qua MQTT
+  client.on('message', (topic, message) => {
+    try {
+      const data = JSON.parse(message.toString());
+
+      /* --------- ĐIỆN ÁP --------- */
+      if (topic === 'hcmute/energy/voltage') {
+        // data: { p12, p23, p31, p1n, p2n, p3n }
+        document.querySelector('#voltage td:nth-child(1)').innerText = data.p12 + ' V';
+        document.querySelector('#voltage td:nth-child(2)').innerText = data.p23 + ' V';
+        document.querySelector('#voltage td:nth-child(3)').innerText = data.p31 + ' V';
+        document.querySelectorAll('#voltage tr')[3].children[0].innerText = data.p1n + ' V';
+        document.querySelectorAll('#voltage tr')[3].children[1].innerText = data.p2n + ' V';
+        document.querySelectorAll('#voltage tr')[3].children[2].innerText = data.p3n + ' V';
+      }
+
+      /* --------- DÒNG ĐIỆN --------- */
+      if (topic === 'hcmute/energy/current') {
+        // data: { i1, i2, i3 }
+        document.querySelector('#current td:nth-child(1)').innerText = data.i1 + ' A';
+        document.querySelector('#current td:nth-child(2)').innerText = data.i2 + ' A';
+        document.querySelector('#current td:nth-child(3)').innerText = data.i3 + ' A';
+      }
+
+      /* --------- TẦN SỐ --------- */
+      if (topic === 'hcmute/energy/frequency') {
+        // data: { f }
+        document.querySelector('#freq h1').innerText = data.f + ' Hz';
+      }
+
+      /* --------- NĂNG LƯỢNG --------- */
+      if (topic === 'hcmute/energy/energy') {
+        // data: { kwh, kvah }
+        document.querySelector('#power td:nth-child(1)').innerText = data.kwh + ' kWh';
+        document.querySelector('#power td:nth-child(2)').innerText = data.kvah + ' kVAh';
+      }
+
+    } catch (e) {
+      console.error('Parse MQTT message error', e);
+    }
+  });
+</script>
+  <style>
+    *{box-sizing:border-box;font-family:Arial,Helvetica,sans-serif}
+    body{margin:0;background:#0f1220;color:#fff}
+    .hidden{display:none}
+    .container{padding:20px}
+    h1,h2{text-align:center}
+    button{padding:14px;border:none;border-radius:10px;font-size:16px;cursor:pointer}
+    .btn{width:100%;color:#fff}
+    .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:15px}
+    .card{padding:20px;border-radius:15px;text-align:center;font-weight:bold}
+    .red{background:#e53935}
+    .green{background:#43a047}
+    .blue{background:#1e88e5}
+    .orange{background:#fb8c00}
+    .gray{background:#5f6a7d}
+    .back{margin-top:15px;background:#374151}
+    .login{max-width:350px;margin:80px auto}
+    input{width:100%;padding:12px;margin:8px 0;border-radius:8px;border:none}
+    canvas{background:#fff;border-radius:10px;padding:10px}
+    table{width:100%;border-collapse:collapse;margin-bottom:15px}
+    td,th{border:1px solid #555;padding:6px;text-align:center}
+  </style>
+</head>
+<body>
+<header style="display:flex;align-items:center;justify-content:space-between;padding:10px 20px;background:#020617;border-bottom:2px solid #0ea5e9">
+  <img src="hcmute-logo.png" alt="HCMUTE" style="height:55px" />
+  <div style="text-align:center">
+    <div style="font-weight:bold;font-size:16px">Trường Đại học Sư Phạm Kỹ Thuật TP.HCM</div>
+    <div style="font-size:14px;color:#38bdf8">Khoa Cơ Khí Chế Tạo Máy</div>
+  </div>
+  <img src="logo_khoa.jpg" alt="Khoa Cơ Khí Chế Tạo Máy" style="height:55px" />
+</header>
+
+<!-- LOGIN -->
+<div id="login" class="login">
+  <h2>Đăng nhập hệ thống</h2>
+  <input placeholder="Tên đăng nhập" type="text" />
+  <input type="password" placeholder="Mật khẩu" />
+  <button class="btn green" onclick="login()">Đăng nhập</button>
+</div>
+
+<!-- MENU -->
+<div id="menu" class="container hidden">
+  <h1>MENU GIÁM SÁT 3 PHA</h1>
+  <div class="grid">
+    <button class="card red" onclick="show('voltage')">⚡ Điện áp (V)</button>
+    <button class="card green" onclick="show('current')">√x Dòng điện (I)</button>
+    <button class="card blue" onclick="show('freq')">〰 Tần số (F)</button>
+    <button class="card orange" onclick="show('power')">⏻ Năng lượng tiêu thụ</button>
+    <button class="card gray" onclick="exportExcel()">📄 Export Data</button>
+    <button class="card gray" onclick="show('setting')">⚙ Cài đặt</button>
+  </div>
+  <button class="btn back" onclick="show('login')">Thoát</button>
+</div>
+
+<!-- ĐIỆN ÁP -->
+<div id="voltage" class="container hidden">
+  <h2>Điện áp (V)</h2>
+  <table>
+    <tr><th>Phase 1-2 (V)</th><th>Phase 2-3 (V)</th><th>Phase 3-1 (V)</th></tr>
+    <tr><td>380 V</td><td>381 V</td><td>379 V</td></tr>
+    <tr><th>Phase 1-N (V)</th><th>Phase 2-N (V)</th><th>Phase 3-N (V)</th></tr>
+    <tr><td>220 V</td><td>221 V</td><td>219 V</td></tr>
+  </table>
+  <canvas id="vChart"></canvas>
+  <button class="btn back" onclick="show('menu')">Quay lại</button>
+</div>
+
+<!-- DÒNG ĐIỆN -->
+<div id="current" class="container hidden">
+  <h2>Dòng điện (A)</h2>
+  <table>
+    <tr><th>I1 (A)</th><th>I2 (A)</th><th>I3 (A)</th></tr>
+    <tr><td>10 A</td><td>11 A</td><td>9 A</td></tr>
+  </table>
+  <canvas id="iChart"></canvas>
+  <button class="btn back" onclick="show('menu')">Quay lại</button>
+</div>
+
+<!-- TẦN SỐ -->
+<div id="freq" class="container hidden">
+  <h2>Tần số (Hz)</h2>
+  <h1>50 Hz</h1>
+  <canvas id="fChart"></canvas>
+  <button class="btn back" onclick="show('menu')">Quay lại</button>
+</div>
+
+<!-- CÔNG SUẤT -->
+<div id="power" class="container hidden">
+  <h2>Năng lượng tiêu thụ</h2>
+  <table>
+    <tr><th>kWh</th><th>kVAh</th></tr>
+    <tr><td>125.4</td><td>138.2</td></tr>
+  </table>
+  <canvas id="pChart"></canvas>
+  <button class="btn back" onclick="show('menu')">Quay lại</button>
+</div>
+
+<!-- CÀI ĐẶT -->
+<div id="setting" class="container hidden">
+  <h2>Cài đặt hệ thống</h2>
+
+  <h3>1. Cấu hình kết nối MQTT</h3>
+  <table>
+    <tr><td>Broker</td><td><input placeholder="mqtt://broker.hivemq.com"></td></tr>
+    <tr><td>Port</td><td><input placeholder="1883"></td></tr>
+    <tr><td>Topic</td><td><input placeholder="hcmute/energy"></td></tr>
+  </table>
+
+  <h3>2. Chu kỳ lấy mẫu</h3>
+  <table>
+    <tr><td>Thời gian cập nhật (ms)</td><td><input placeholder="1000"></td></tr>
+  </table>
+
+  <h3>3. Ngưỡng cảnh báo</h3>
+  <table>
+    <tr><td>Quá áp (V)</td><td><input placeholder="250"></td></tr>
+    <tr><td>Quá dòng (A)</td><td><input placeholder="20"></td></tr>
+  </table>
+
+  <h3>4. Giao diện</h3>
+  <table>
+    <tr><td>Chế độ hiển thị</td><td>
+      <select>
+        <option>Dark mode</option>
+        <option>Light mode</option>
+      </select>
+    </td></tr>
+  </table>
+
+  <p style="color:#94a3b8">(Các chức năng trên mang tính mô phỏng, có thể mở rộng trong nghiên cứu tiếp theo)</p>
+
+  <button class="btn back" onclick="show('menu')">Quay lại</button>
+</div>
+
+<script>
+  function login(){
+    const user = document.querySelector('#login input[type=text], #login input:not([type])').value;
+    const pass = document.querySelector('#login input[type=password]').value;
+    if(user === 'hcmute' && pass === '1234'){
+      show('menu');
+    } else {
+      alert('Sai tên đăng nhập hoặc mật khẩu');
+    }
+  }
+
+  function show(id){
+    document.querySelectorAll('body > div').forEach(d=>d.classList.add('hidden'));
+    document.getElementById(id).classList.remove('hidden');
+  }
+
+  function chart(id,label,data){
+    new Chart(document.getElementById(id),{
+      type:'line',
+      data:{labels:['1','2','3','4','5'],datasets:label.map((l,i)=>({label:l,data:data[i],borderWidth:2}))}
+    })
+  }
+
+  chart('vChart',['U1','U2','U3'],[[220,221,219,220,222],[221,222,220,221,223],[219,218,220,219,221]])
+  chart('iChart',['I1','I2','I3'],[[10,11,10,9,10],[11,12,11,10,11],[9,8,9,9,10]])
+  chart('fChart',['F'],[[50,50.1,49.9,50,50]])
+  chart('pChart',['kWh','kVAh'],[[120,121,123,124,125],[130,132,134,136,138]])
+
+  function exportExcel(){
+    alert('Xuất file Excel (demo đồ án)')
+  }
+</script>
+</body>
+</html>
